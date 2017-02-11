@@ -32,17 +32,18 @@ flag debug-trace-events
   manual: True
 
 library
-  build-depends: indef, reflex, spider, host
+  build-depends: base, indef, reflex, spider, host
   mixins:
     spider (Reflex.Spider.Backpack as Reflex.Sig,
             Reflex.Spider.Backpack as Reflex.Host.Sig),
     reflex (Data.Functor.Misc, Data.WeakBag, Reflex.Patch,
             Reflex.FunctorMaybe, Reflex.TriggerEvent.Class,
             Reflex.PerformEvent.Base, Reflex.Spider, Reflex.Spider.Internal)
+  exposed-modules:
+    Reflex
   reexported-modules:
     Data.Functor.Misc,
     Data.WeakBag,
-    -- Reflex,
     -- Reflex.Class,
     Reflex.Basics,
     Reflex.EventWriter,
@@ -248,3 +249,20 @@ library spider
 
   if flag(expose-all-unfoldings)
     ghc-options: -fexpose-all-unfoldings
+
+benchmark spider-bench
+  type: exitcode-stdio-1.0
+  hs-source-dirs: bench
+  main-is: Main.hs
+  ghc-options: -Wall -O2 -rtsopts
+  build-depends:
+    base,
+    criterion == 1.1.*,
+    deepseq >= 1.3 && < 1.5,
+    dependent-map,
+    dependent-sum,
+    mtl,
+    primitive,
+    reflex-backpack,
+    stm,
+    transformers >= 0.3

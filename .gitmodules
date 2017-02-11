@@ -1,0 +1,15 @@
+[submodule "vendor/comonad"]
+	path = vendor/comonad
+	url = git@github.com:ekmett/comonad.git
+[submodule "vendor/lens"]
+	path = vendor/lens
+	url = git@github.com:ekmett/lens.git
+[submodule "vendor/parallel"]
+	path = vendor/parallel
+	url = git@github.com:haskell/parallel.git
+[submodule "vendor/reflex"]
+	path = vendor/reflex
+	url = git@github.com:reflex-frp/reflex.git
+[submodule "vendor/semigroupoids"]
+	path = vendor/semigroupoids
+	url = git@github.com:ekmett/semigroupoids.git

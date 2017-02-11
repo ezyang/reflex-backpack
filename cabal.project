@@ -1,0 +1,4 @@
+packages: . vendor/*/*.cabal
+constraints: reflex -use-template-haskell,
+             reflex-backpack -use-template-haskell
+allow-newer: all

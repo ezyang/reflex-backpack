@@ -9,7 +9,7 @@ Maintainer: ezyang@cs.stanford.edu
 Stability: Experimental
 Category: FRP
 Build-type: Simple
-Cabal-version: >=1.23
+Cabal-version: >=1.25
 
 flag use-reflex-optimizer
   description: Use the GHC plugin Reflex.Optimizer on some of the modules in the package.  This is still experimental.

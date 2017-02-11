@@ -1,0 +1,67 @@
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RoleAnnotations #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
+#ifdef USE_REFLEX_OPTIMIZER
+{-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
+#endif
+-- | This module provides the interface for hosting 'Reflex' engines.  This
+-- should only be necessary if you're writing a binding or some other library
+-- that provides a core event loop.
+signature Reflex.Host.Sig
+{-
+  ( ReflexHost (..)
+  , MonadSubscribeEvent (..)
+  , MonadReflexCreateTrigger (..)
+  , fireEvents
+  , newEventWithTriggerRef
+  , fireEventRef
+  , fireEventRefAndRead
+  ) -} where
+
+import Reflex.Basics
+
+import Control.Applicative
+import Control.Monad
+import Control.Monad.Fix
+import Data.GADT.Compare
+
+-- Note: this import must come last to silence warnings from AMP
+import Prelude hiding (foldl, mapM, mapM_, sequence, sequence_)
+
+-- | Framework implementation support class for the reflex implementation
+-- represented by @t@.
+
+data EventTrigger t a
+type role EventTrigger phantom nominal
+data EventHandle t a
+type role EventHandle phantom representational
+data HostFrame t a
+type role HostFrame phantom representational
+
+instance HasTimeline t => Functor (HostFrame t)
+instance HasTimeline t => Applicative (HostFrame t)
+instance HasTimeline t => Monad (HostFrame t)
+instance HasTimeline t => MonadSample (Impl t) (HostFrame t)
+instance HasTimeline t => MonadHold (Impl t) (HostFrame t)
+instance HasTimeline t => MonadFix (HostFrame t)
+
+subscribeEventHostFrame
+    :: HasTimeline t
+    => Event (Impl t) a -> HostFrame t (EventHandle t a)
+
+newEventWithTriggerHostFrame
+    :: HasTimeline t
+    => (EventTrigger t a -> IO (IO ())) -> HostFrame t (Event (Impl t) a)
+
+newFanEventWithTriggerHostFrame
+    :: (HasTimeline t, GCompare k)
+    => (forall a. k a -> EventTrigger t a -> IO (IO ())) -> HostFrame t (EventSelector (Impl t) k)

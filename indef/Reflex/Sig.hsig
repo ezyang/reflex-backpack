@@ -19,8 +19,7 @@
 -- signals.
 signature Reflex.Sig(
     module Reflex.Sig,
-    Reflex, Event, Dynamic, Behavior, Incremental,
-    EventSelector(..), MonadHold(..), MonadSample(..)
+    MonadHold(..), MonadSample(..)
     ) where
 
 import Control.Applicative
@@ -53,9 +52,9 @@ import Data.These
 import Data.Traversable
 import Data.Type.Coercion
 import Reflex.Patch
+import qualified Reflex.Class as C
 import Reflex.Class
-    (Reflex, Event, Dynamic, Behavior, Incremental,
-    EventSelector(..), MonadHold(..), MonadSample(..), MonadAdjust(..))
+    (MonadHold(..), MonadSample(..))
 
 -- Note: must come last to silence warnings due to AMP on GHC < 7.10
 import Prelude hiding (foldl, mapM, mapM_, sequence, sequence_)
@@ -65,14 +64,22 @@ class HasTimeline t
 data Impl t
 type role Impl nominal
 
+type Event          t = C.Event         (Impl t)
+type Dynamic        t = C.Dynamic       (Impl t)
+type Behavior       t = C.Behavior      (Impl t)
+type Incremental    t = C.Incremental   (Impl t)
+type EventSelector  t = C.EventSelector (Impl t)
+-- Can't synonym MonadHold/MonadSample because constraint synonym instances
+-- don't work
+
 data PushM t a
 type role PushM nominal nominal
 data PullM t a
 type role PullM nominal nominal
 
-instance HasTimeline t => Functor       (Dynamic (Impl t))
-instance HasTimeline t => Applicative   (Dynamic (Impl t))
-instance HasTimeline t => Monad         (Dynamic (Impl t))
+instance HasTimeline t => Functor       (Dynamic t)
+instance HasTimeline t => Applicative   (Dynamic t)
+instance HasTimeline t => Monad         (Dynamic t)
 instance HasTimeline t => MonadSample   (Impl t) (PullM t)
 instance HasTimeline t => MonadHold     (Impl t) (PushM t)
 instance HasTimeline t => MonadSample   (Impl t) (PushM t)
@@ -85,77 +92,77 @@ instance HasTimeline t => Applicative   (PullM t)
 instance HasTimeline t => Functor       (PullM t)
 
 -- | An 'Event' with no occurrences
-never :: HasTimeline t => Event (Impl t) a
+never :: HasTimeline t => Event t a
 
 -- | Create a 'Behavior' that always has the given value
-constant :: HasTimeline t => a -> Behavior (Impl t) a
+constant :: HasTimeline t => a -> Behavior t a
 --TODO: Refactor to use 'pure' from Applicative instead; however, we need to make sure that encouraging Applicative-style use of 'Behavior's doesn't have a negative performance impact
 
 -- | Create an 'Event' from another 'Event'; the provided function can sample
 -- 'Behavior's and hold 'Event's, and use the results to produce a occurring
 -- (Just) or non-occurring (Nothing) result
-push :: HasTimeline t => (a -> PushM t (Maybe b)) -> Event (Impl t) a -> Event (Impl t) b
+push :: HasTimeline t => (a -> PushM t (Maybe b)) -> Event t a -> Event t b
 
 -- | Like 'push' but intended for functions that the implementation can consider cheap to compute for performance considerations. WARNING: The function passed to 'pushCheap' may be run multiple times without any caching.
-pushCheap :: HasTimeline t => (a -> PushM t (Maybe b)) -> Event (Impl t) a -> Event (Impl t) b
+pushCheap :: HasTimeline t => (a -> PushM t (Maybe b)) -> Event t a -> Event t b
 
 -- | Create a 'Behavior' by reading from other 'Behavior's; the result will be
 -- recomputed whenever any of the read 'Behavior's changes
-pull :: HasTimeline t => PullM t a -> Behavior (Impl t) a
+pull :: HasTimeline t => PullM t a -> Behavior t a
 
 -- | Merge a collection of events; the resulting 'Event' will only occur if at
 -- least one input event is occuring, and will contain all of the input keys
 -- that are occurring simultaneously
-merge :: HasTimeline t => GCompare k => DMap k (Event (Impl t)) -> Event (Impl t) (DMap k Identity) --TODO: Generalize to get rid of DMap use --TODO: Provide a type-level guarantee that the result is not empty
+merge :: HasTimeline t => GCompare k => DMap k (Event t) -> Event t (DMap k Identity) --TODO: Generalize to get rid of DMap use --TODO: Provide a type-level guarantee that the result is not empty
 
 -- | Efficiently fan-out an event to many destinations.  This function should
 -- be partially applied, and then the result applied repeatedly to create
 -- child events
-fan :: (HasTimeline t, GCompare k) => Event (Impl t) (DMap k Identity) -> EventSelector (Impl t) k --TODO: Can we help enforce the partial application discipline here?  The combinator is worthless without it
+fan :: (HasTimeline t, GCompare k) => Event t (DMap k Identity) -> EventSelector t k --TODO: Can we help enforce the partial application discipline here?  The combinator is worthless without it
 
 -- | Create an 'Event' that will occur whenever the currently-selected input
 -- 'Event' occurs
-switch :: HasTimeline t => Behavior (Impl t) (Event (Impl t) a) -> Event (Impl t) a
+switch :: HasTimeline t => Behavior t (Event t a) -> Event t a
 
 -- | Create an 'Event' that will occur whenever the input event is occurring
 -- and its occurrence value, another 'Event', is also occurring
-coincidence :: HasTimeline t => Event (Impl t) (Event (Impl t) a) -> Event (Impl t) a
+coincidence :: HasTimeline t => Event t (Event t a) -> Event t a
 
 -- | Extract the 'Behavior' of a 'Dynamic'.
-current :: HasTimeline t => Dynamic (Impl t) a -> Behavior (Impl t) a
+current :: HasTimeline t => Dynamic t a -> Behavior t a
 
 -- | Extract the 'Event' of the 'Dynamic'.
-updated :: HasTimeline t => Dynamic (Impl t) a -> Event (Impl t) a
+updated :: HasTimeline t => Dynamic t a -> Event t a
 
 -- | Create a new 'Dynamic'.  The given 'PullM' must always return the most
 -- recent firing of the given 'Event', if any.
-unsafeBuildDynamic :: HasTimeline t => PullM t a -> Event (Impl t) a -> Dynamic (Impl t) a
+unsafeBuildDynamic :: HasTimeline t => PullM t a -> Event t a -> Dynamic t a
 
 -- | Create a new 'Incremental'.  The given 'PullM''s value must always change
 -- in the same way that the accumulated application of patches would change
 -- that value.
-unsafeBuildIncremental :: (HasTimeline t, Patch p) => PullM t (PatchTarget p) -> Event (Impl t) p -> Incremental (Impl t) p
+unsafeBuildIncremental :: (HasTimeline t, Patch p) => PullM t (PatchTarget p) -> Event t p -> Incremental t p
 
 -- | Create a merge whose parents can change over time
-mergeIncremental :: (HasTimeline t, GCompare k) => Incremental (Impl t) (PatchDMap k (Event (Impl t))) -> Event (Impl t) (DMap k Identity)
+mergeIncremental :: (HasTimeline t, GCompare k) => Incremental t (PatchDMap k (Event t)) -> Event t (DMap k Identity)
 
 -- | Extract the 'Behavior' component of an 'Incremental'
-currentIncremental :: (HasTimeline t, Patch p) => Incremental (Impl t) p -> Behavior (Impl t) (PatchTarget p)
+currentIncremental :: (HasTimeline t, Patch p) => Incremental t p -> Behavior t (PatchTarget p)
 
 -- | Extract the 'Event' component of an 'Incremental'
-updatedIncremental :: (HasTimeline t, Patch p) => Incremental (Impl t) p -> Event (Impl t) p
+updatedIncremental :: (HasTimeline t, Patch p) => Incremental t p -> Event t p
 
 -- | Convert an 'Incremental' to a 'Dynamic'
-incrementalToDynamic :: (HasTimeline t, Patch p) => Incremental (Impl t) p -> Dynamic (Impl t) (PatchTarget p)
+incrementalToDynamic :: (HasTimeline t, Patch p) => Incremental t p -> Dynamic t (PatchTarget p)
 
 -- | Construct a 'Coercion' for a 'Behavior' given an 'Coercion' for its
 -- occurrence type
-behaviorCoercion :: HasTimeline t => Coercion a b -> Coercion (Behavior (Impl t) a) (Behavior (Impl t) b)
+behaviorCoercion :: HasTimeline t => Coercion a b -> Coercion (Behavior t a) (Behavior t b)
 
 -- | Construct a 'Coercion' for an 'Event' given an 'Coercion' for its
 -- occurrence type
-eventCoercion :: HasTimeline t => Coercion a b -> Coercion (Event (Impl t) a) (Event (Impl t) b)
+eventCoercion :: HasTimeline t => Coercion a b -> Coercion (Event t a) (Event t b)
 
 -- | Construct a 'Coercion' for a 'Dynamic' given an 'Coercion' for its
 -- occurrence type
-dynamicCoercion :: HasTimeline t => Coercion a b -> Coercion (Dynamic (Impl t) a) (Dynamic (Impl t) b)
+dynamicCoercion :: HasTimeline t => Coercion a b -> Coercion (Dynamic t a) (Dynamic t b)

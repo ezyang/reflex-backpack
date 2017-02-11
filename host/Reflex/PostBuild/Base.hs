@@ -32,13 +32,13 @@ import Control.Monad.Trans.Control
 import qualified Data.Dependent.Map as DMap
 
 -- | Provides a basic implementation of 'PostBuild'.
-newtype PostBuildT t m a = PostBuildT { unPostBuildT :: ReaderT (Event (Impl t) ()) m a } deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadTrans, MonadException, MonadAsyncException)
+newtype PostBuildT t m a = PostBuildT { unPostBuildT :: ReaderT (Event t ()) m a } deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadTrans, MonadException, MonadAsyncException)
 
 -- | Run a 'PostBuildT' action.  An 'Event' should be provided that fires
 -- immediately after the action is finished running; no other 'Event's should
 -- fire first.
 {-# INLINABLE runPostBuildT #-}
-runPostBuildT :: PostBuildT t m a -> Event (Impl t) () -> m a
+runPostBuildT :: PostBuildT t m a -> Event t () -> m a
 runPostBuildT (PostBuildT a) = runReaderT a
 
 instance PrimMonad m => PrimMonad (PostBuildT x m) where
@@ -46,7 +46,7 @@ instance PrimMonad m => PrimMonad (PostBuildT x m) where
   primitive = lift . primitive
 
 instance MonadTransControl (PostBuildT t) where
-  type StT (PostBuildT t) a = StT (ReaderT (Event (Impl t) ())) a
+  type StT (PostBuildT t) a = StT (ReaderT (Event t ())) a
   {-# INLINABLE liftWith #-}
   liftWith = defaultLiftWith PostBuildT unPostBuildT
   {-# INLINABLE restoreT #-}
@@ -68,7 +68,7 @@ instance MonadHold (Impl t) m => MonadHold (Impl t) (PostBuildT t m) where
   {-# INLINABLE holdIncremental #-}
   holdIncremental v0 = lift . holdIncremental v0
 
-instance PerformEvent (Impl t) m => PerformEvent (Impl t) (PostBuildT t m) where
+instance PerformEvent t m => PerformEvent t (PostBuildT t m) where
   type Performable (PostBuildT t m) = PostBuildT t (Performable m)
   {-# INLINABLE performEvent_ #-}
   performEvent_ e = liftWith $ \run -> performEvent_ $ fmap run e
@@ -81,7 +81,7 @@ instance (HasTimeline t, MonadReflexCreateTrigger t m) => MonadReflexCreateTrigg
   {-# INLINABLE newFanEventWithTrigger #-}
   newFanEventWithTrigger f = PostBuildT $ lift $ newFanEventWithTrigger f
 
-instance TriggerEvent (Impl t) m => TriggerEvent (Impl t) (PostBuildT t m) where
+instance TriggerEvent t m => TriggerEvent t (PostBuildT t m) where
   {-# INLINABLE newTriggerEvent #-}
   newTriggerEvent = lift newTriggerEvent
   {-# INLINABLE newTriggerEventWithOnComplete #-}
@@ -101,7 +101,7 @@ instance MonadAtomicRef m => MonadAtomicRef (PostBuildT t m) where
   {-# INLINABLE atomicModifyRef #-}
   atomicModifyRef r = lift . atomicModifyRef r
 
-instance (HasTimeline t, MonadHold (Impl t) m, MonadFix m, MonadAdjust t m, PerformEvent (Impl t) m) => MonadAdjust t (PostBuildT t m) where
+instance (HasTimeline t, MonadHold (Impl t) m, MonadFix m, MonadAdjust t m, PerformEvent t m) => MonadAdjust t (PostBuildT t m) where
   runWithReplace a0 a' = do
     postBuild <- getPostBuild
     lift $ do

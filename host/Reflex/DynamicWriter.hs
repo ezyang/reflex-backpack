@@ -46,28 +46,28 @@ import Reflex.TriggerEvent.Class
 instance MonadTrans (DynamicWriterT t w) where
   lift = DynamicWriterT . lift
 
-mapIncrementalMapValuesWithKey :: (HasTimeline t, Ord k) => (k -> v -> v') -> Incremental (Impl t) (PatchMap k v) -> Incremental (Impl t) (PatchMap k v')
+mapIncrementalMapValuesWithKey :: (HasTimeline t, Ord k) => (k -> v -> v') -> Incremental t (PatchMap k v) -> Incremental t (PatchMap k v')
 mapIncrementalMapValuesWithKey f = unsafeMapIncremental (Map.mapWithKey f) $ \(PatchMap m) -> PatchMap $ Map.mapWithKey (\k mv -> fmap (f k) mv) m
 
-mapIncrementalMapValues :: (HasTimeline t, Ord k) => (v -> v') -> Incremental (Impl t) (PatchMap k v) -> Incremental (Impl t) (PatchMap k v')
+mapIncrementalMapValues :: (HasTimeline t, Ord k) => (v -> v') -> Incremental t (PatchMap k v) -> Incremental t (PatchMap k v')
 mapIncrementalMapValues f = mapIncrementalMapValuesWithKey $ const f
 
-unsafeMapIncremental :: (HasTimeline t, Patch p, Patch p') => (PatchTarget p -> PatchTarget p') -> (p -> p') -> Incremental (Impl t) p -> Incremental (Impl t) p'
+unsafeMapIncremental :: (HasTimeline t, Patch p, Patch p') => (PatchTarget p -> PatchTarget p') -> (p -> p') -> Incremental t p -> Incremental t p'
 unsafeMapIncremental f g a = unsafeBuildIncremental (fmap f $ sample $ currentIncremental a) $ g <$> updatedIncremental a
 
-incrementalExtractFunctorDMap :: (HasTimeline t, Ord k) => Incremental (Impl t) (PatchMap k (f v)) -> Incremental (Impl t) (PatchDMap (Const2 k v) f)
+incrementalExtractFunctorDMap :: (HasTimeline t, Ord k) => Incremental t (PatchMap k (f v)) -> Incremental t (PatchDMap (Const2 k v) f)
 incrementalExtractFunctorDMap = unsafeMapIncremental mapWithFunctorToDMap $ \(PatchMap m) -> PatchDMap $ mapWithFunctorToDMap $ fmap ComposeMaybe m
 
-mergeIncrementalMap :: (HasTimeline t, Ord k) => Incremental (Impl t) (PatchMap k (Event (Impl t) v)) -> Event (Impl t) (Map k v)
+mergeIncrementalMap :: (HasTimeline t, Ord k) => Incremental t (PatchMap k (Event t v)) -> Event t (Map k v)
 mergeIncrementalMap = fmap dmapToMap . mergeIncremental . incrementalExtractFunctorDMap
 
-mergeDynIncremental :: (HasTimeline t, Ord k) => Incremental (Impl t) (PatchMap k (Dynamic (Impl t) v)) -> Incremental (Impl t) (PatchMap k v)
+mergeDynIncremental :: (HasTimeline t, Ord k) => Incremental t (PatchMap k (Dynamic t v)) -> Incremental t (PatchMap k v)
 mergeDynIncremental a = unsafeBuildIncremental (mapM (sample . current) =<< sample (currentIncremental a)) $ addedAndRemovedValues <> changedValues
   where changedValues = fmap (PatchMap . fmap Just) $ mergeIncrementalMap $ mapIncrementalMapValues updated a
         addedAndRemovedValues = flip pushAlways (updatedIncremental a) $ \(PatchMap m) -> PatchMap <$> mapM (mapM (sample . current)) m
 
 -- | A basic implementation of 'MonadDynamicWriter'.
-newtype DynamicWriterT t w m a = DynamicWriterT { unDynamicWriterT :: StateT [Dynamic (Impl t) w] m a } deriving (Functor, Applicative, Monad, MonadIO, MonadFix, MonadAsyncException, MonadException) -- The list is kept in reverse order
+newtype DynamicWriterT t w m a = DynamicWriterT { unDynamicWriterT :: StateT [Dynamic t w] m a } deriving (Functor, Applicative, Monad, MonadIO, MonadFix, MonadAsyncException, MonadException) -- The list is kept in reverse order
 deriving instance (HasTimeline t, MonadHold (Impl t) m) => MonadHold (Impl t) (DynamicWriterT t w m)
 deriving instance (HasTimeline t, MonadSample (Impl t) m) => MonadSample (Impl t) (DynamicWriterT t w m)
 
@@ -86,7 +86,7 @@ instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (DynamicWrit
 
 -- | Run a 'DynamicWriterT' action.  The dynamic writer output will be provided
 -- along with the result of the action.
-runDynamicWriterT :: (MonadFix m, HasTimeline t, Monoid w) => DynamicWriterT t w m a -> m (a, Dynamic (Impl t) w)
+runDynamicWriterT :: (MonadFix m, HasTimeline t, Monoid w) => DynamicWriterT t w m a -> m (a, Dynamic t w)
 runDynamicWriterT (DynamicWriterT a) = do
   (result, ws) <- runStateT a []
   return (result, mconcat $ reverse ws)
@@ -94,7 +94,7 @@ runDynamicWriterT (DynamicWriterT a) = do
 -- | 'MonadDynamicWriter' efficiently collects 'Dynamic' values using 'tellDyn'
 -- and combines them monoidally to provide a 'Dynamic' result.
 class (Monad m, Monoid w) => MonadDynamicWriter t w m | m -> t w where
-  tellDyn :: Dynamic (Impl t) w -> m ()
+  tellDyn :: Dynamic t w -> m ()
 
 instance (Monad m, Monoid w, HasTimeline t) => MonadDynamicWriter t w (DynamicWriterT t w m) where
   tellDyn w = DynamicWriterT $ modify (w :)
@@ -124,7 +124,7 @@ instance MonadState s m => MonadState s (DynamicWriterT t w m) where
   get = lift get
   put = lift . put
 
-newtype DynamicWriterTLoweredResult t w v = DynamicWriterTLoweredResult (v, Dynamic (Impl t) w)
+newtype DynamicWriterTLoweredResult t w v = DynamicWriterTLoweredResult (v, Dynamic t w)
 
 -- | When the execution of a 'DynamicWriterT' action is adjusted using
 -- 'MonadAdjust', the 'Dynamic' output of that action will also be updated to
@@ -144,7 +144,7 @@ instance (MonadAdjust t m, MonadFix m, Monoid w, MonadHold (Impl t) m, HasTimeli
         liftedResult0 = mapKeyValuePairsMonotonic (\(WrapArg k :=> Identity r) -> k :=> Identity (getValue r)) result0
         liftedResult' = ffor result' $ \(PatchDMap p) -> PatchDMap $
           mapKeyValuePairsMonotonic (\(WrapArg k :=> ComposeMaybe mr) -> k :=> ComposeMaybe (fmap (Identity . getValue . runIdentity) mr)) p
-        liftedWritten0 :: Map (Some k) (Dynamic (Impl t) w)
+        liftedWritten0 :: Map (Some k) (Dynamic t w)
         liftedWritten0 = Map.fromDistinctAscList $ (\(WrapArg k :=> Identity r) -> (Some.This k, getWritten r)) <$> DMap.toList result0
         liftedWritten' = ffor result' $ \(PatchDMap p) -> PatchMap $
           Map.fromDistinctAscList $ (\(WrapArg k :=> ComposeMaybe mr) -> (Some.This k, fmap (getWritten . runIdentity) mr)) <$> DMap.toList p

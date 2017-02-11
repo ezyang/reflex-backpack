@@ -22,6 +22,7 @@ module Reflex.Requester.Base
   ) where
 
 import Reflex.Basics
+import Reflex.Class (select)
 import Reflex.EventWriter
 import Reflex.Host.Basics
 import Reflex.PerformEvent.Class
@@ -42,13 +43,13 @@ import Data.Functor.Misc
 import Data.Unique.Tag
 
 -- | A basic implementation of 'Requester'.
-newtype RequesterT t request response m a = RequesterT { unRequesterT :: EventWriterT t (DMap (Tag (PrimState m)) request) (ReaderT (EventSelector (Impl t) (WrapArg response (Tag (PrimState m)))) m) a }
+newtype RequesterT t request response m a = RequesterT { unRequesterT :: EventWriterT t (DMap (Tag (PrimState m)) request) (ReaderT (EventSelector t (WrapArg response (Tag (PrimState m)))) m) a }
   deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException)
 
 deriving instance MonadSample (Impl t) m => MonadSample (Impl t) (RequesterT t request response m)
 deriving instance MonadHold (Impl t) m => MonadHold (Impl t) (RequesterT t request response m)
 deriving instance PostBuild t m => PostBuild t (RequesterT t request response m)
-deriving instance TriggerEvent (Impl t) m => TriggerEvent (Impl t) (RequesterT t request response m)
+deriving instance TriggerEvent t m => TriggerEvent t (RequesterT t request response m)
 
 -- | Run a 'RequesterT' action.  The resulting 'Event' will fire whenever
 -- requests are made, and responses should be provided in the input 'Event'.
@@ -57,8 +58,8 @@ deriving instance TriggerEvent (Impl t) m => TriggerEvent (Impl t) (RequesterT t
 
 runRequesterT :: (HasTimeline t, Monad m)
               => RequesterT t request response m a
-              -> Event (Impl t) (DMap (Tag (PrimState m)) response)
-              -> m (a, Event (Impl t) (DMap (Tag (PrimState m)) request))
+              -> Event t (DMap (Tag (PrimState m)) response)
+              -> m (a, Event t (DMap (Tag (PrimState m)) request))
 runRequesterT (RequesterT a) responses = do
   (result, requests) <- runReaderT (runEventWriterT a) $ fan $
     mapKeyValuePairsMonotonic (\(t :=> e) -> WrapArg t :=> Identity e) <$> responses
@@ -102,32 +103,32 @@ instance (HasTimeline t, MonadAdjust t m, MonadHold (Impl t) m) => MonadAdjust t
   sequenceDMapWithAdjust dm edm = RequesterT $ sequenceDMapWithAdjust (coerce dm) (coerceEvent edm)
 
 runWithReplaceRequesterTWith :: forall m t request response a b. (HasTimeline t, MonadHold (Impl t) m)
-                             => (forall a' b'. m a' -> Event (Impl t) (m b') -> RequesterT t request response m (a', Event (Impl t) b'))
+                             => (forall a' b'. m a' -> Event t (m b') -> RequesterT t request response m (a', Event t b'))
                              -> RequesterT t request response m a
-                             -> Event (Impl t) (RequesterT t request response m b)
-                             -> RequesterT t request response m (a, Event (Impl t) b)
+                             -> Event t (RequesterT t request response m b)
+                             -> RequesterT t request response m (a, Event t b)
 runWithReplaceRequesterTWith f a0 a' =
-  let f' :: forall a' b'. ReaderT (EventSelector (Impl t) (WrapArg response (Tag (PrimState m)))) m a'
-         -> Event (Impl t) (ReaderT (EventSelector (Impl t) (WrapArg response (Tag (PrimState m)))) m b')
-         -> EventWriterT t (DMap (Tag (PrimState m)) request) (ReaderT (EventSelector (Impl t) (WrapArg response (Tag (PrimState m)))) m) (a', Event (Impl t) b')
+  let f' :: forall a' b'. ReaderT (EventSelector t (WrapArg response (Tag (PrimState m)))) m a'
+         -> Event t (ReaderT (EventSelector t (WrapArg response (Tag (PrimState m)))) m b')
+         -> EventWriterT t (DMap (Tag (PrimState m)) request) (ReaderT (EventSelector t (WrapArg response (Tag (PrimState m)))) m) (a', Event t b')
       f' x y = do
         r <- EventWriterT $ ask
         unRequesterT (f (runReaderT x r) (fmapCheap (`runReaderT` r) y))
   in RequesterT $ runWithReplaceEventWriterTWith f' (coerce a0) (coerceEvent a')
 
 sequenceDMapWithAdjustRequesterTWith :: (GCompare k, HasTimeline t, MonadHold (Impl t) m)
-                                     => (forall k'. GCompare k' => DMap k' m -> Event (Impl t) (PatchDMap k' m) -> RequesterT t request response m (DMap k' Identity, Event (Impl t) (PatchDMap k' Identity)))
+                                     => (forall k'. GCompare k' => DMap k' m -> Event t (PatchDMap k' m) -> RequesterT t request response m (DMap k' Identity, Event t (PatchDMap k' Identity)))
                                      -> DMap k (RequesterT t request response m)
-                                     -> Event (Impl t) (PatchDMap k (RequesterT t request response m))
-                                     -> RequesterT t request response m (DMap k Identity, Event (Impl t) (PatchDMap k Identity))
+                                     -> Event t (PatchDMap k (RequesterT t request response m))
+                                     -> RequesterT t request response m (DMap k Identity, Event t (PatchDMap k Identity))
 sequenceDMapWithAdjustRequesterTWith f (dm0 :: DMap k (RequesterT t request response m)) dm' =
   let dmapUnwrap r = mapKeyValuePairsMonotonic $ \(k :=> v) -> k :=> runReaderT v r
       patchDmapUnwrap r (PatchDMap p) = PatchDMap $ mapKeyValuePairsMonotonic
         (\(k :=> ComposeMaybe mv) -> k :=> ComposeMaybe (fmap (`runReaderT` r) mv)) p
       f' :: forall k'. GCompare k'
-         => DMap k' (ReaderT (EventSelector (Impl t) (WrapArg response (Tag (PrimState m)))) m)
-         -> Event (Impl t) (PatchDMap k' (ReaderT (EventSelector (Impl t) (WrapArg response (Tag (PrimState m)))) m))
-         -> EventWriterT t (DMap (Tag (PrimState m)) request) (ReaderT (EventSelector (Impl t) (WrapArg response (Tag (PrimState m)))) m) (DMap k' Identity, Event (Impl t) (PatchDMap k' Identity))
+         => DMap k' (ReaderT (EventSelector t (WrapArg response (Tag (PrimState m)))) m)
+         -> Event t (PatchDMap k' (ReaderT (EventSelector t (WrapArg response (Tag (PrimState m)))) m))
+         -> EventWriterT t (DMap (Tag (PrimState m)) request) (ReaderT (EventSelector t (WrapArg response (Tag (PrimState m)))) m) (DMap k' Identity, Event t (PatchDMap k' Identity))
       f' x y = do
         r <- EventWriterT $ ask
         unRequesterT (f (dmapUnwrap r x) (fmap (patchDmapUnwrap r) y))

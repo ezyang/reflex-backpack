@@ -28,7 +28,7 @@ import Control.Monad.Reader
 -- fire exactly once for an given action.
 class (HasTimeline t, Monad m) => PostBuild t m | m -> t where
   -- | Retrieve the post-build 'Event' for this action.
-  getPostBuild :: m (Event (Impl t) ())
+  getPostBuild :: m (Event t ())
 
 instance PostBuild t m => PostBuild t (ReaderT r m) where
   getPostBuild = lift getPostBuild

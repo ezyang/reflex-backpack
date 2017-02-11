@@ -31,7 +31,7 @@ import Reflex.Dynamic
 newtype UniqDynamic i a = UniqDynamic { unUniqDynamic :: Dynamic i a }
 
 -- | Construct a 'UniqDynamic' by eliminating redundant updates from a 'Dynamic'.
-uniqDynamic :: HasTimeline t => Dynamic (Impl t) a -> UniqDynamic (Impl t) a
+uniqDynamic :: HasTimeline t => Dynamic t a -> UniqDynamic t a
 uniqDynamic d = UniqDynamic $ unsafeBuildDynamic (sample $ current d) $ flip push (updated d) $ \new -> do --TODO: It would be very nice if we had an uncached push here
   old <- sample $ current d --TODO: Is it better to sample ourselves here?
   return $ unsafeJustChanged old new
@@ -46,7 +46,7 @@ uniqDynamic d = UniqDynamic $ unsafeBuildDynamic (sample $ current d) $ flip pus
 -- of 'Double' and 'Float' are considered unequal to themselves by the 'Eq'
 -- instance, but can be equal by pointer equality.  This may cause 'UniqDynamic'
 -- to lose changes from NaN to NaN.
-fromUniqDynamic :: (HasTimeline t, Eq a) => UniqDynamic (Impl t) a -> Dynamic (Impl t) a
+fromUniqDynamic :: (HasTimeline t, Eq a) => UniqDynamic t a -> Dynamic t a
 fromUniqDynamic (UniqDynamic d) = uniqDynBy superEq d
   where
     -- Only consider values different if they fail both pointer equality /and/
@@ -62,7 +62,7 @@ fromUniqDynamic (UniqDynamic d) = uniqDynBy superEq d
 -- faster than uniqDynamic when used with a Dynamic whose values are always (or
 -- nearly always) different from its previous values; if used with a Dynamic
 -- whose values do not change frequently, it may be much slower than uniqDynamic
-alreadyUniqDynamic :: Dynamic (Impl t) a -> UniqDynamic (Impl t) a
+alreadyUniqDynamic :: Dynamic t a -> UniqDynamic t a
 alreadyUniqDynamic = UniqDynamic
 
 unsafePtrEq :: a -> a -> Bool
@@ -76,7 +76,7 @@ unsafeJustChanged old new =
   then Nothing
   else Just new
 
-instance HasTimeline t => Accumulator t (UniqDynamic (Impl t)) where
+instance HasTimeline t => Accumulator t (UniqDynamic t) where
   accumMaybeM f z e = do
     let f' old change = do
           mNew <- f old change
@@ -90,16 +90,16 @@ instance HasTimeline t => Accumulator t (UniqDynamic (Impl t)) where
     (d, out) <- mapAccumMaybeM f' z e
     return (UniqDynamic d, out)
 
-instance HasTimeline t => Functor (UniqDynamic (Impl t)) where
+instance HasTimeline t => Functor (UniqDynamic t) where
   fmap f (UniqDynamic d) = uniqDynamic $ fmap f d
 
-instance HasTimeline t => Applicative (UniqDynamic (Impl t)) where
+instance HasTimeline t => Applicative (UniqDynamic t) where
   pure = UniqDynamic . constDyn
   UniqDynamic a <*> UniqDynamic b = uniqDynamic $ a <*> b
   _ *> b = b
   a <* _ = a
 
-instance HasTimeline t => Monad (UniqDynamic (Impl t)) where
+instance HasTimeline t => Monad (UniqDynamic t) where
   UniqDynamic x >>= f = uniqDynamic $ x >>= unUniqDynamic . f
   _ >> b = b
   return = pure

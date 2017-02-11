@@ -51,14 +51,14 @@ import Data.Unique.Tag
 -- | 'EventWriter' efficiently collects 'Event' values using 'tellEvent'
 -- and combines them monoidally to provide an 'Event' result.
 class (Monad m, Monoid w) => EventWriter t w m | m -> t w where
-  tellEvent :: Event (Impl t) w -> m ()
+  tellEvent :: Event t w -> m ()
 
 -- | A basic implementation of 'EventWriter'.
-newtype EventWriterT t w m a = EventWriterT { unEventWriterT :: StateT (Seq (Event (Impl t) w)) m a }
+newtype EventWriterT t w m a = EventWriterT { unEventWriterT :: StateT (Seq (Event t w)) m a }
   deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException, MonadAsyncException)
 
 -- | Run a 'EventWriterT' action.
-runEventWriterT :: (HasTimeline t, Monad m, Semigroup w) => EventWriterT t w m a -> m (a, Event (Impl t) w)
+runEventWriterT :: (HasTimeline t, Monad m, Semigroup w) => EventWriterT t w m a -> m (a, Event t w)
 runEventWriterT (EventWriterT a) = do
   (result, requests) <- runStateT a mempty
   return (result, mconcat $ toList requests)
@@ -92,12 +92,12 @@ instance Requester t m => Requester t (EventWriterT t w m) where
 -- monad doesn't have a 'MonadAdjust' instance or to override the default
 -- 'MonadAdjust' behavior.
 runWithReplaceEventWriterTWith :: forall m t w a b. (HasTimeline t, MonadHold (Impl t) m, Monoid w)
-                               => (forall a' b'. m a' -> Event (Impl t) (m b') -> EventWriterT t w m (a', Event (Impl t) b'))
+                               => (forall a' b'. m a' -> Event t (m b') -> EventWriterT t w m (a', Event t b'))
                                -> EventWriterT t w m a
-                               -> Event (Impl t) (EventWriterT t w m b)
-                               -> EventWriterT t w m (a, Event (Impl t) b)
+                               -> Event t (EventWriterT t w m b)
+                               -> EventWriterT t w m (a, Event t b)
 runWithReplaceEventWriterTWith f a0 a' = do
-  let g :: EventWriterT t w m c -> m (c, Seq (Event (Impl t) w))
+  let g :: EventWriterT t w m c -> m (c, Seq (Event t w))
       g (EventWriterT r) = runStateT r mempty
   (result0, result') <- f (g a0) $ fmap g a'
   request <- holdDyn (fmapCheap (mconcat . NonEmpty.toList) $ mergeList $ toList $ snd result0) $ fmapCheap (fmapCheap (mconcat . NonEmpty.toList) . mergeList . toList . snd) result'
@@ -110,22 +110,22 @@ runWithReplaceEventWriterTWith f a0 a' = do
 sequenceDMapWithAdjustEventWriterTWith :: (GCompare k, HasTimeline t, MonadHold (Impl t) m, Monoid w, Semigroup w)
                                        => (forall k'. GCompare k'
                                            => DMap k' m
-                                           -> Event (Impl t) (PatchDMap k' m)
-                                           -> EventWriterT t w m (DMap k' Identity, Event (Impl t) (PatchDMap k' Identity))
+                                           -> Event t (PatchDMap k' m)
+                                           -> EventWriterT t w m (DMap k' Identity, Event t (PatchDMap k' Identity))
                                           )
                                        -> DMap k (EventWriterT t w m)
-                                       -> Event (Impl t) (PatchDMap k (EventWriterT t w m))
-                                       -> EventWriterT t w m (DMap k Identity, Event (Impl t) (PatchDMap k Identity))
+                                       -> Event t (PatchDMap k (EventWriterT t w m))
+                                       -> EventWriterT t w m (DMap k Identity, Event t (PatchDMap k Identity))
 sequenceDMapWithAdjustEventWriterTWith f (dm0 :: DMap k (EventWriterT t w m)) dm' = do
-  let inputTransform :: forall a. DMapTransform a k (WrapArg ((,) (Seq (Event (Impl t) w))) k) (EventWriterT t w m) m
+  let inputTransform :: forall a. DMapTransform a k (WrapArg ((,) (Seq (Event t w))) k) (EventWriterT t w m) m
       inputTransform = DMapTransform WrapArg (\(EventWriterT v) -> swap <$> runStateT v mempty)
   (children0, children') <- f (mapKeysAndValuesMonotonic inputTransform dm0) $ mapPatchKeysAndValuesMonotonic inputTransform <$> dm'
   let result0 = mapKeyValuePairsMonotonic (\(WrapArg k :=> Identity (_, v)) -> k :=> Identity v) children0
       result' = fforCheap children' $ \(PatchDMap p) -> PatchDMap $
         mapKeyValuePairsMonotonic (\(WrapArg k :=> ComposeMaybe mv) -> k :=> ComposeMaybe (fmap (Identity . snd . runIdentity) mv)) p
-      requests0 :: DMap (Const2 (Some k) w) (Event (Impl t))
+      requests0 :: DMap (Const2 (Some k) w) (Event t)
       requests0 = mapKeyValuePairsMonotonic (\(WrapArg k :=> Identity (r, _)) -> Const2 (Some.This k) :=> mconcat (toList r)) children0
-      requests' :: Event (Impl t) (PatchDMap (Const2 (Some k) w) (Event (Impl t)))
+      requests' :: Event t (PatchDMap (Const2 (Some k) w) (Event t))
       requests' = fforCheap children' $ \(PatchDMap p) -> PatchDMap $
         mapKeyValuePairsMonotonic (\(WrapArg k :=> ComposeMaybe mv) -> Const2 (Some.This k) :=> ComposeMaybe (fmap (mconcat . toList . fst . runIdentity) mv)) p
   childRequestMap <- holdIncremental requests0 requests'
@@ -135,7 +135,7 @@ sequenceDMapWithAdjustEventWriterTWith f (dm0 :: DMap k (EventWriterT t w m)) dm
     mconcat $ (\(Const2 _ :=> Identity reqs) -> reqs) <$> DMap.toList m
   return (result0, result')
 
-instance PerformEvent (Impl t) m => PerformEvent (Impl t) (EventWriterT t w m) where
+instance PerformEvent t m => PerformEvent t (EventWriterT t w m) where
   type Performable (EventWriterT t w m) = Performable m
   performEvent_ = lift . performEvent_
   performEvent = lift . performEvent
@@ -143,7 +143,7 @@ instance PerformEvent (Impl t) m => PerformEvent (Impl t) (EventWriterT t w m) w
 instance PostBuild t m => PostBuild t (EventWriterT t w m) where
   getPostBuild = lift getPostBuild
 
-instance TriggerEvent (Impl t) m => TriggerEvent (Impl t) (EventWriterT t w m) where
+instance TriggerEvent t m => TriggerEvent t (EventWriterT t w m) where
   newTriggerEvent = lift newTriggerEvent
   newTriggerEventWithOnComplete = lift newTriggerEventWithOnComplete
   newEventWithLazyTriggerWithOnComplete = lift . newEventWithLazyTriggerWithOnComplete

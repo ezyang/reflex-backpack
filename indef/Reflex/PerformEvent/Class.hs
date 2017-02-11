@@ -34,10 +34,10 @@ class (HasTimeline t, Monad (Performable m), Monad m) => PerformEvent t m | m ->
   -- fires.  Return the result in another 'Event'.  Note that the output 'Event'
   -- will generally occur later than the input 'Event', since most 'Performable'
   -- actions cannot be performed during 'Event' propagation.
-  performEvent :: Event (Impl t) (Performable m a) -> m (Event (Impl t) a)
+  performEvent :: Event t (Performable m a) -> m (Event t a)
   -- | Like 'performEvent', but do not return the result.  May have slightly
   -- better performance.
-  performEvent_ :: Event (Impl t) (Performable m ()) -> m ()
+  performEvent_ :: Event t (Performable m ()) -> m ()
 
 -- | Like 'performEvent', but the resulting 'Event' occurs only when the
 -- callback (@a -> IO ()@) is called, not when the included action finishes.
@@ -48,7 +48,7 @@ class (HasTimeline t, Monad (Performable m), Monad m) => PerformEvent t m | m ->
 -- (which fully implements concurrency even though JavaScript does not have
 -- built in concurrency).
 {-# INLINABLE performEventAsync #-}
-performEventAsync :: (TriggerEvent (Impl t) m, PerformEvent t m) => Event (Impl t) ((a -> IO ()) -> Performable m ()) -> m (Event (Impl t) a)
+performEventAsync :: (TriggerEvent (Impl t) m, PerformEvent t m) => Event t ((a -> IO ()) -> Performable m ()) -> m (Event t a)
 performEventAsync e = do
   (eOut, triggerEOut) <- newTriggerEvent
   performEvent_ $ fmap ($ triggerEOut) e

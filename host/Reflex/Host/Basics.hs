@@ -67,7 +67,7 @@ class (HasTimeline t, Monad m) => MonadSubscribeEvent t m | m -> t where
   -- created by 'newEventWithTrigger', then it's callback will be executed.
   --
   -- It's safe to call this function multiple times.
-  subscribeEvent :: Event (Impl t) a -> m (EventHandle t a)
+  subscribeEvent :: Event t a -> m (EventHandle t a)
 
 instance HasTimeline t => MonadSubscribeEvent t (HostFrame t) where
     subscribeEvent = subscribeEventHostFrame
@@ -87,8 +87,8 @@ class (Applicative m, Monad m) => MonadReflexCreateTrigger t m | m -> t where
   --
   -- Note: An event may be set up multiple times. So after the teardown action
   -- is executed, the event may still be set up again in the future.
-  newEventWithTrigger :: (EventTrigger t a -> IO (IO ())) -> m (Event (Impl t) a)
-  newFanEventWithTrigger :: GCompare k => (forall a. k a -> EventTrigger t a -> IO (IO ())) -> m (EventSelector (Impl t) k)
+  newEventWithTrigger :: (EventTrigger t a -> IO (IO ())) -> m (Event t a)
+  newFanEventWithTrigger :: GCompare k => (forall a. k a -> EventTrigger t a -> IO (IO ())) -> m (EventSelector t k)
 
 instance HasTimeline t => MonadReflexCreateTrigger t (HostFrame t) where
     newEventWithTrigger = newEventWithTriggerHostFrame
@@ -158,7 +158,7 @@ fireEvents dm = fireEventsAndRead dm $ return ()
 -- event is not active, the 'IORef' will contain 'Nothing'. This allows event
 -- sources to be more efficient, since they don't need to produce events when
 -- nobody is listening.
-newEventWithTriggerRef :: (MonadReflexCreateTrigger t m, MonadRef m, Ref m ~ Ref IO) => m (Event (Impl t) a, Ref m (Maybe (EventTrigger t a)))
+newEventWithTriggerRef :: (MonadReflexCreateTrigger t m, MonadRef m, Ref m ~ Ref IO) => m (Event t a, Ref m (Maybe (EventTrigger t a)))
 newEventWithTriggerRef = do
   rt <- newRef Nothing
   e <- newEventWithTrigger $ \t -> do

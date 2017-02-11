@@ -41,7 +41,7 @@ class (HasTimeline t, Monad m) => Requester t m | m -> t where
   -- provides a convenient way to define instances of the typeclass that
   -- efficiently support the underlying operations without needing to use
   -- 'Control.Monad.Fix.MonadFix'.
-  withRequesting :: (Event (Impl t) (Response m a) -> m (Event (Impl t) (Request m a), r)) -> m r
+  withRequesting :: (Event t (Response m a) -> m (Event t (Request m a), r)) -> m r
 
 instance Requester t m => Requester t (ReaderT r m) where
   type Request (ReaderT r m) = Request m
@@ -74,14 +74,14 @@ instance Requester t m => Requester t (Lazy.StateT s m) where
 
 -- | Emit a request whenever the given 'Event' fires, and return responses in
 -- the resulting 'Event'.
-requesting :: Requester t m => Event (Impl t) (Request m a) -> m (Event (Impl t) (Response m a))
+requesting :: Requester t m => Event t (Request m a) -> m (Event t (Response m a))
 requesting req = withRequesting $ return . (,) req
 
 -- | Emit a request whenever the given 'Event' fires, and ignore all responses.
-requesting_ :: Requester t m => Event (Impl t) (Request m a) -> m ()
+requesting_ :: Requester t m => Event t (Request m a) -> m ()
 requesting_ req = withRequesting $ \_ -> return (req, ())
 
 -- | Emit a request whenever the given 'Event' fires, and unwrap the responses
 -- before returning them.  @Response m@ must be 'Identity'.
-requestingIdentity :: (Requester t m, Response m ~ Identity) => Event (Impl t) (Request m a) -> m (Event (Impl t) a)
+requestingIdentity :: (Requester t m, Response m ~ Identity) => Event t (Request m a) -> m (Event t a)
 requestingIdentity = fmap coerceEvent . requesting

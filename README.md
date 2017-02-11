@@ -64,12 +64,18 @@ class ( MonadHold t (PushM t)
 class HasTimeline t
 
 data Impl t
+
+type Event          t = C.Event         (Impl t)
+type Dynamic        t = C.Dynamic       (Impl t)
+type Behavior       t = C.Behavior      (Impl t)
+type Incremental    t = C.Incremental   (Impl t)
+type EventSelector  t = C.EventSelector (Impl t)
 data PushM t a
 data PullM t a
 
-instance HasTimeline t => Functor       (Dynamic (Impl t))
-instance HasTimeline t => Applicative   (Dynamic (Impl t))
-instance HasTimeline t => Monad         (Dynamic (Impl t))
+instance HasTimeline t => Functor       (Dynamic t)
+instance HasTimeline t => Applicative   (Dynamic t)
+instance HasTimeline t => Monad         (Dynamic t)
 instance HasTimeline t => MonadSample   (Impl t) (PullM t)
 instance HasTimeline t => MonadHold     (Impl t) (PushM t)
 instance HasTimeline t => MonadSample   (Impl t) (PushM t)
@@ -81,7 +87,7 @@ instance HasTimeline t => Monad         (PullM t)
 instance HasTimeline t => Applicative   (PullM t)
 instance HasTimeline t => Functor       (PullM t)
 
-never :: HasTimeline t => Event (Impl t) a
+never :: HasTimeline t => Event t a
 ...
 ```
 
@@ -145,9 +151,21 @@ Backpack, but in the end I went with the following scheme:
   we would not know that `Reflex.Class.Event` is the same as
   `Reflex.Sig.Event`).
 
+  To avoid having to specify `Impl` everywhere, we define
+  type signatures for these classes which insert the `Impl`
+  application.
+
   I would have liked to do this trick for the type families as
   well, but it doesn't work: we need to specify instances
   for each of the superclasses of the `Reflex` class, but
   type synonym families are not allowed in instance heads.
   There might be some relaxation to GHC's rules here which would
   make this possible, but at the moment, it doesn't work.
+
+  Note that we need to specify an instance for every superclass
+  (this is how Backpack signatures behave), unlike superclasses
+  which don't need to.
+
+* Finally, we have the actual methods from the class, which are
+  now top-level functions.  These are the functions that we
+  are removing indirection for!
